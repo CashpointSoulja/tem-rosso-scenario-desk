@@ -1,0 +1,74 @@
+1
+00:00:00,401 --> 00:00:05,951
+This is the Rosso Scenario Desk, an independent concept
+I built for the tem Senior Product Manager role.
+
+2
+00:00:06,052 --> 00:00:10,752
+Everything is synthetic.
+Fictional assets, fictional prices, and no trades.
+
+3
+00:00:10,852 --> 00:00:15,416
+I load one settlement day of half-hourly
+demand, generation and forecast data.
+
+4
+00:00:15,515 --> 00:00:19,957
+Checks come first. Coverage asks whether
+every reading is actually there.
+
+5
+00:00:20,056 --> 00:00:23,974
+Forecast error is reported separately,
+and split by model version.
+
+6
+00:00:24,075 --> 00:00:29,612
+The clean day concludes. An unforecast demand spike
+adds about nine hundred and seventy pounds.
+
+7
+00:00:29,712 --> 00:00:34,382
+An outage costs more, because the forecast
+is only corrected after a detection lag.
+
+8
+00:00:34,483 --> 00:00:39,457
+Every bar traces back to the raw CSV lines behind it,
+and to the scenario change applied.
+
+9
+00:00:39,558 --> 00:00:44,655
+Assumptions are editable. Cutting detection lag
+to one period cuts the outage cost sharply.
+
+10
+00:00:44,756 --> 00:00:46,875
+Now a day with a missing meter batch.
+
+11
+00:00:46,977 --> 00:00:51,838
+Missing readings are not zero. So every total
+is withheld, and the gaps are hatched.
+
+12
+00:00:51,938 --> 00:00:54,815
+The trace shows the blank reading
+that caused the block.
+
+13
+00:00:54,915 --> 00:01:00,569
+Stale or conflicting inputs go to a person. Each decision
+is recorded, then the results conclude.
+
+14
+00:01:00,669 --> 00:01:06,286
+Finally, I export a decision memo and a scenario CSV,
+with every source row ID.
+
+15
+00:01:06,386 --> 00:01:09,986
+The decision itself stays with an accountable person,
+not the tool.
+

@@ -10,7 +10,7 @@ import { download, gbp, mwh, signedGbp } from './download';
 import { FIXTURE_TEXT } from './fixtures';
 
 const START = SAMPLES[0].file;
-const STATUS_TEXT = { ready: 'Ready', review: 'Needs review', blocked: 'Blocked', ok: 'Covered', gap: 'Missing', excluded: 'Excluded' } as const;
+const STATUS_TEXT = { ready: 'Ready', review: 'Needs review', blocked: 'Blocked', ok: 'Covered', gap: 'Missing', excluded: 'Excluded', decided: 'Decided' } as const;
 
 function Chip({ s }: { s: keyof typeof STATUS_TEXT }) {
   return <span className={`chip chip-${s}`}>{STATUS_TEXT[s]}</span>;
@@ -189,7 +189,7 @@ export function App() {
             {checks.review.length === 0 && <p><Chip s="ok" /> Nothing stale or conflicting.</p>}
             {checks.review.map((r) => (
               <fieldset key={r.id} className={`review ${res[r.id] ? 'done' : ''}`}>
-                <legend>{res[r.id] ? <Chip s="ok" /> : <Chip s="review" />} {r.title}</legend>
+                <legend>{res[r.id] ? <Chip s="decided" /> : <Chip s="review" />} {r.title}</legend>
                 <p className="muted">{r.detail}</p>
                 <div className="options">
                   {r.options.map((o) => (

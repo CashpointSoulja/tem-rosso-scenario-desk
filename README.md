@@ -4,8 +4,8 @@
 
 This is a browser-only scenario desk for one synthetic settlement day on a small two-sided energy portfolio, with two demand assets and two generators. You load half-hourly forecast and actual data, check whether the data can support an answer, compare a **baseline**, a **demand spike** and a **generator outage**, trace any number back to its CSV line, and export a decision memo and scenario CSV.
 
-- Live demo: _see the repository "About" link once published_
-- Walkthrough video: _see Releases_
+- Live demo: GitHub Pages for this repository (deployed by `.github/workflows/pages.yml`)
+- Walkthrough video: [media/walkthrough.mp4](media/walkthrough.mp4) (70 s, voiced, captions in [media/walkthrough.srt](media/walkthrough.srt))
 
 ## The 30-second version
 
