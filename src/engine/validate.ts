@@ -1,4 +1,4 @@
-import { CsvError, fingerprint, parseCsv } from './csv';
+import { CsvError, fingerprint, parseCsvRecords, type CsvRecord } from './csv';
 import { expectedPeriods, isValidDate } from './periods';
 import type { Asset, AssetType, Dataset, Issue, SourceRow } from './types';
 
@@ -14,13 +14,18 @@ export const REQUIRED_COLUMNS = [
   'forecast_issued_at',
 ] as const;
 
-const NUM = /^-?\d+(\.\d+)?$/;
+const NUM = /^-?\d{1,9}(\.\d{1,9})?$/;
+/** Upper bound for one asset in one half-hour. Anything larger is a data error, not a reading. */
+export const MAX_MWH = 10_000;
 
-function num(v: string): number | null | 'bad' {
+function num(v: string): number | null | 'bad' | 'range' {
   const s = v.trim();
   if (s === '') return null;
   if (!NUM.test(s)) return 'bad';
-  return Number(s);
+  const n = Number(s);
+  if (!Number.isFinite(n)) return 'bad';
+  if (n > MAX_MWH) return 'range';
+  return n;
 }
 
 /** Any of these in a file means the bytes are not readable text (binary, wrong encoding). */
@@ -39,19 +44,19 @@ export function parseDataset(name: string, text: string, readError?: string): Da
   };
   if (readError) return fatal('unreadable', `The file could not be read: ${readError}`);
   if (UNREADABLE.test(text)) return fatal('unreadable', 'The file is not readable UTF-8 CSV text (binary or wrong encoding).');
-  let parsed: string[][];
+  let parsed: CsvRecord[];
   try {
-    parsed = parseCsv(text);
+    parsed = parseCsvRecords(text);
   } catch (e) {
     if (e instanceof CsvError) return fatal('bad-csv', `Malformed CSV. ${e.message} Nothing in the file is used.`, e.line);
     throw e;
   }
-  const table = parsed.filter((r) => !(r.length === 1 && r[0].trim() === ''));
+  const table = parsed.filter((r) => !(r.cells.length === 1 && r.cells[0].trim() === ''));
   if (table.length === 0) {
     add({ severity: 'error', code: 'empty-file', message: 'The file is empty.' });
     return { ...base, fatal: true };
   }
-  const header = table[0].map((h) => h.trim().toLowerCase());
+  const header = table[0].cells.map((h) => h.trim().toLowerCase());
   const missing = REQUIRED_COLUMNS.filter((c) => !header.includes(c));
   if (missing.length) {
     add({ severity: 'error', code: 'missing-columns', message: `Missing required column(s): ${missing.join(', ')}.` });
@@ -64,10 +69,8 @@ export function parseDataset(name: string, text: string, readError?: string): Da
   const dates = new Map<string, number>();
   const assetTypes = new Map<string, AssetType>();
   const rejectedAssets = new Set<string>();
-  const lines = text.split(/\r?\n/);
 
-  table.slice(1).forEach((cells, idx) => {
-    const line = idx + 2;
+  table.slice(1).forEach(({ cells, line, raw }) => {
     const get = (c: (typeof REQUIRED_COLUMNS)[number]) => (cells[col[c]] ?? '').trim();
     const rowId = get('row_id');
     const reject = (code: string, message: string) => {
@@ -94,7 +97,9 @@ export function parseDataset(name: string, text: string, readError?: string): Da
     const f = num(get('forecast_mwh'));
     const a = num(get('actual_mwh'));
     if (f === 'bad') return reject('bad-number', `forecast_mwh "${get('forecast_mwh')}" is not a number.`);
+    if (f === 'range') return reject('out-of-range', `forecast_mwh "${get('forecast_mwh')}" is above ${MAX_MWH} MWh for one half-hour.`);
     if (a === 'bad') return reject('bad-number', `actual_mwh "${get('actual_mwh')}" is not a number.`);
+    if (a === 'range') return reject('out-of-range', `actual_mwh "${get('actual_mwh')}" is above ${MAX_MWH} MWh for one half-hour.`);
     if ((f !== null && f < 0) || (a !== null && a < 0)) return reject('negative', 'Negative MWh; this file records demand and generation as separate positive volumes.');
 
     seenIds.add(rowId);
@@ -102,7 +107,7 @@ export function parseDataset(name: string, text: string, readError?: string): Da
     dates.set(date, (dates.get(date) ?? 0) + 1);
     rows.push({
       rowId, line, date, sp, assetId, assetType: t, forecastMwh: f, actualMwh: a,
-      model: get('forecast_model') || 'unknown', issuedAt: get('forecast_issued_at'), raw: lines[line - 1] ?? cells.join(','),
+      model: get('forecast_model') || 'unknown', issuedAt: get('forecast_issued_at'), raw,
     });
   });
 

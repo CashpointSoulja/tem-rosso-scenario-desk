@@ -52,6 +52,32 @@ function totals(periods: PeriodResult[]): ScenarioTotals {
   return { shortMwh: round(shortMwh), longMwh: round(longMwh), netMwh: round(longMwh - shortMwh), costGbp: round(costGbp, 2), worstSp, worstCostGbp: round(worstCostGbp, 2) };
 }
 
+/** Allowed ranges. Out-of-range or non-integer values block every scenario rather than being clamped silently. */
+export function assumptionErrors(a: Assumptions, expectedSps: number): string[] {
+  const out: string[] = [];
+  const check = (k: keyof Assumptions, label: string, min: number, max: number, int = false) => {
+    const v = a[k] as number;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max || (int && !Number.isInteger(v)))
+      out.push(`${label} must be ${int ? 'a whole number ' : ''}between ${min} and ${max} (got ${v}).`);
+  };
+  check('spikePct', 'Demand uplift %', -50, 200);
+  check('spikeStart', 'Spike from SP', 1, expectedSps, true);
+  check('spikeEnd', 'Spike to SP', 1, expectedSps, true);
+  check('outageStart', 'Outage from SP', 1, expectedSps, true);
+  check('outageEnd', 'Outage to SP', 1, expectedSps, true);
+  check('detectionLagSps', 'Detection lag', 0, 48, true);
+  check('peakPrice', 'Peak price £/MWh', 0, 10_000);
+  check('offPeakPrice', 'Off-peak price £/MWh', 0, 10_000);
+  check('peakStart', 'Peak from SP', 1, expectedSps, true);
+  check('peakEnd', 'Peak to SP', 1, expectedSps, true);
+  check('shortPremiumPct', 'Short premium %', 0, 500);
+  check('longDiscountPct', 'Long spill loss %', 0, 100);
+  check('staleHours', 'Stale threshold h', 1, 720);
+  for (const [s, e, label] of [[a.spikeStart, a.spikeEnd, 'Spike'], [a.outageStart, a.outageEnd, 'Outage'], [a.peakStart, a.peakEnd, 'Peak']] as const)
+    if (s > e) out.push(`${label} window starts after it ends (SP ${s} > SP ${e}).`);
+  return out;
+}
+
 export function runScenario(id: ScenarioId, ds: Dataset, checks: CheckResult, a: Assumptions): ScenarioResult {
   const periods: PeriodResult[] = [];
   const date = ds.date ?? '';
@@ -104,6 +130,8 @@ export function runScenario(id: ScenarioId, ds: Dataset, checks: CheckResult, a:
   const inReview = periods.filter((p) => p.status === 'review');
   const reasons: string[] = [];
   const invalid = ds.issues.filter((i) => i.severity === 'error').length;
+  const badAssumptions = assumptionErrors(a, ds.expectedSps);
+  for (const e of badAssumptions) reasons.push(`Invalid assumption: ${e}`);
   if (ds.fatal) reasons.push('Dataset could not be read.');
   else if (invalid) reasons.push(`${invalid} validation error(s) in the file. Rejected rows cannot be valued or ignored, so no conclusion is drawn until the file is fixed and reloaded.`);
   if (blocked.length) reasons.push(`${blocked.length} of ${periods.length} periods have missing or excluded readings. Missing data is not zero, so no conclusion is drawn.`);
@@ -111,7 +139,7 @@ export function runScenario(id: ScenarioId, ds: Dataset, checks: CheckResult, a:
   const otherOpen = checks.openReview.filter((r) => r.kind === 'model-change');
   for (const r of otherOpen) reasons.push(`Open review: ${r.title}.`);
   if (id === 'outage' && !outageKnown) reasons.push(`Outage asset ${a.outageAsset} is not a generator in this file.`);
-  const status = ds.fatal || invalid || blocked.length || (id === 'outage' && !outageKnown) ? 'blocked' : inReview.length || otherOpen.length ? 'review' : 'ready';
+  const status = ds.fatal || invalid || badAssumptions.length || blocked.length || (id === 'outage' && !outageKnown) ? 'blocked' : inReview.length || otherOpen.length ? 'review' : 'ready';
   return {
     id, label: SCENARIO_LABELS[id], status, reasons, periods,
     totals: status === 'ready' ? totals(periods) : null,

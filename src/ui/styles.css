@@ -199,3 +199,4 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   h2 { font-size: 1.6rem; }
   .actions .btn, .actions .btn-ghost { width: 100%; }
 }
+.input-unit input:invalid { border-color: var(--blocked); box-shadow: 0 0 0 1px var(--blocked); }

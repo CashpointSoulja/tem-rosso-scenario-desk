@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { runChecks } from './checks';
-import { DEFAULT_ASSUMPTIONS as A, runAll } from './scenarios';
+import { DEFAULT_ASSUMPTIONS as A, assumptionErrors, runAll } from './scenarios';
 import { parseDataset } from './validate';
 import { decisionMemo, exportBlockReason, ExportBlockedError, scenarioCsv } from './exports';
 
 const H = 'row_id,settlement_date,sp,asset_id,asset_type,forecast_mwh,actual_mwh,forecast_model,forecast_issued_at';
 function day(over: (sp: number, asset: string) => string | null = () => null, date = '2026-10-05', n = 48) {
   const lines = [H];
+  const issued = new Date(Date.parse(`${date}T12:00:00Z`) - 86_400_000).toISOString().replace('.000', '');
   let id = 0;
   for (const [asset, type] of [['D-01', 'demand'], ['G-01', 'generation']]) {
     for (let sp = 1; sp <= n; sp++) {
       const o = over(sp, asset);
       if (o === 'skip') continue;
-      lines.push(o ?? `R${++id},${date},${sp},${asset},${type},1.000,1.000,m1,2026-10-04T12:00:00Z`);
+      lines.push(o ?? `R${++id},${date},${sp},${asset},${type},1.000,1.000,m1,${issued}`);
     }
   }
   return lines.join('\n');
@@ -59,8 +60,9 @@ describe('edge cases', () => {
   it('conflicting resend needs review; excluding it blocks', () => {
     const text = day() + '\nR999,2026-10-05,5,D-01,demand,1.000,1.500,m1,2026-10-04T12:00:00Z';
     expect(run(text).r[0].status).toBe('review');
-    expect(run(text, { 'conflict:D-01:5': 'exclude' }).r[0].status).toBe('blocked');
-    expect(run(text, { 'conflict:D-01:5': 'use:R999' }).r[0].status).toBe('ready');
+    const cf = run(text).c.review.find((x) => x.id.startsWith('conflict:D-01:5#'))!.id;
+    expect(run(text, { [cf]: 'exclude' }).r[0].status).toBe('blocked');
+    expect(run(text, { [cf]: 'use:R999' }).r[0].status).toBe('ready');
   });
 
   it('rejects malformed values without zero-filling', () => {
@@ -95,7 +97,7 @@ describe('edge cases', () => {
 
   it('unparseable issue time counts as stale and needs review', () => {
     const { c, r } = run(day((sp, a) => (sp === 1 && a === 'D-01' ? 'X1,2026-10-05,1,D-01,demand,1,1,m1,yesterday' : null)));
-    expect(c.review.map((x) => x.id)).toContain('stale:D-01');
+    expect(c.review.map((x) => x.id.split('#')[0])).toContain('stale:D-01');
     expect(r[0].status).toBe('review');
   });
 
@@ -111,7 +113,8 @@ describe('edge cases', () => {
     const d = c.errorStats.filter((s) => s.assetType === 'demand');
     expect(d.map((s) => [s.model, s.n, s.maeMwh])).toEqual([['m1', 24, 0], ['m2', 24, expect.closeTo(0.2, 6)]]);
     expect(r[0].status).toBe('review');
-    expect(run(day((sp, a) => (a === 'D-01' && sp > 24 ? `M${sp},2026-10-05,${sp},D-01,demand,1.200,1.000,m2,2026-10-04T12:00:00Z` : null)), { 'model:D-01': 'ack' }).r[0].status).toBe('ready');
+    const md = c.review.find((x) => x.kind === 'model-change')!.id;
+    expect(run(day((sp, a) => (a === 'D-01' && sp > 24 ? `M${sp},2026-10-05,${sp},D-01,demand,1.200,1.000,m2,2026-10-04T12:00:00Z` : null)), { [md]: 'ack' }).r[0].status).toBe('ready');
   });
 
   it('outage on an unknown asset blocks only the outage scenario', () => {
@@ -182,14 +185,75 @@ describe('edge cases', () => {
     for (const text of ['', 'row_id,sp\n1,1', 'PK\u0003\u0004\u0000', day().replace('R3,', '"R3,')]) {
       const { ds, c, r } = run(text);
       expect(exportBlockReason(ds)).toMatch(/^Export is blocked/);
-      expect(() => scenarioCsv(ds, r)).toThrow(ExportBlockedError);
+      expect(() => scenarioCsv(ds, r, { assumptions: A, checks: c, resolutions: {} })).toThrow(ExportBlockedError);
       expect(() => decisionMemo({ ds, checks: c, results: r, assumptions: A, resolutions: {}, lag: [], reviewer: '', note: '', generatedAt: 'x' })).toThrow(ExportBlockedError);
     }
   });
 
   it('a valid but blocked day still exports, with blocked totals withheld', () => {
-    const { ds, r } = run(day((sp, a) => (sp === 9 && a === 'G-01' ? 'skip' : null)));
+    const { ds, c, r } = run(day((sp, a) => (sp === 9 && a === 'G-01' ? 'skip' : null)));
     expect(exportBlockReason(ds)).toBeNull();
-    expect(scenarioCsv(ds, r)).toContain('blocked');
+    expect(scenarioCsv(ds, r, { assumptions: A, checks: c, resolutions: {} })).toContain('blocked');
+  });
+
+  it('a stale approval does not carry over when a lower threshold makes more rows stale', () => {
+    const ds = parseDataset('t', day());
+    const c30 = runChecks(ds, {}, 30);
+    const st = c30.review.find((x) => x.kind === 'stale-forecast')!;
+    const res = Object.fromEntries(c30.review.map((x) => [x.id, 'accept']));
+    expect(runAll(ds, runChecks(ds, res, 30), { ...A, staleHours: 30, outageAsset: 'G-01' })[0].status).toBe('ready');
+    const c24 = runChecks(ds, res, 24);
+    const st24 = c24.review.find((x) => x.kind === 'stale-forecast')!;
+    expect(st24.rowIds.length).toBeGreaterThan(st.rowIds.length);
+    expect(st24.id).not.toBe(st.id);
+    expect(c24.openReview.map((x) => x.id)).toContain(st24.id);
+    expect(runAll(ds, c24, { ...A, staleHours: 24, outageAsset: 'G-01' })[0].status).toBe('review');
+  });
+
+  it('an approval does not carry over to a resend with different conflicting rows', () => {
+    const t1 = day() + '\nR999,2026-10-05,5,D-01,demand,1.000,1.500,m1,2026-10-04T12:00:00Z';
+    const t2 = day() + '\nR998,2026-10-05,5,D-01,demand,1.000,1.700,m1,2026-10-04T12:00:00Z';
+    const cf = run(t1).c.review[0].id;
+    expect(run(t2, { [cf]: 'exclude' }).c.openReview).toHaveLength(1);
+  });
+
+  it('huge or non-finite numbers are rejected instead of producing Infinity', () => {
+    const big = '9'.repeat(400);
+    for (const v of [big, `${big}.0`, '1e400', '10000.001']) {
+      const { ds, r } = run(day((sp, a) => (sp === 3 && a === 'D-01' ? `X3,2026-10-05,3,D-01,demand,${v},1.000,m1,2026-10-04T12:00:00Z` : null)));
+      expect(ds.issues.some((i) => i.code === 'bad-number' || i.code === 'out-of-range')).toBe(true);
+      expect(r.every((x) => x.status === 'blocked' && x.totals === null)).toBe(true);
+      expect(JSON.stringify(r)).not.toContain('Infinity');
+    }
+  });
+
+  it('out-of-range or inconsistent assumptions block every scenario', () => {
+    const ds = parseDataset('t', day());
+    const c = runChecks(ds, {}, A.staleHours);
+    for (const over of [{ peakPrice: -180 }, { offPeakPrice: Number.NaN }, { longDiscountPct: 140 }, { detectionLagSps: 2.5 }, { spikeStart: 40, spikeEnd: 30 }, { outageEnd: 49 }, { staleHours: 0 }]) {
+      const a = { ...A, outageAsset: 'G-01', ...over };
+      expect(assumptionErrors(a, 48).length).toBeGreaterThan(0);
+      const r = runAll(ds, c, a);
+      expect(r.every((x) => x.status === 'blocked' && x.totals === null)).toBe(true);
+      expect(r[0].reasons.join(' ')).toMatch(/Invalid assumption/);
+    }
+    expect(assumptionErrors({ ...A, outageAsset: 'G-01' }, 48)).toEqual([]);
+  });
+
+  it('forecasts issued at or after the period starts are blocked, not Ready', () => {
+    const { c, r } = run(day((sp, a) => (sp === 10 && a === 'G-01' ? 'F10,2026-10-05,10,G-01,generation,1.000,1.000,m1,2099-01-01T00:00:00Z' : null)));
+    expect(c.issues.some((i) => i.code === 'forecast-after-delivery')).toBe(true);
+    expect(r[0].periods.find((p) => p.sp === 10)!.status).toBe('blocked');
+    expect(r.every((x) => x.status === 'blocked')).toBe(true);
+  });
+
+  it('blank lines do not shift physical line numbers or raw provenance', () => {
+    const text = day().replace('\nR1,', '\n\n\nR1,').replace('\nR5,', '\r\n\nR5,');
+    const ds = parseDataset('t', text);
+    const phys = text.split(/\r?\n/);
+    for (const row of ds.rows) expect(phys[row.line - 1]).toBe(row.raw);
+    expect(ds.rows.find((x) => x.rowId === 'R1')!.line).toBe(4);
+    const bad = parseDataset('t', day().replace('\nR2,', '\n\nR2,').replace('R3,2026-10-05,3,D-01,demand,1.000', 'R3,2026-10-05,3,D-01,demand,abc'));
+    expect(bad.issues.find((i) => i.code === 'bad-number')!.line).toBe(5);
   });
 });

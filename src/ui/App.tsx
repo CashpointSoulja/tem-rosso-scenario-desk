@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { runChecks } from '../engine/checks';
 import { decisionMemo, exportBlockReason, scenarioCsv } from '../engine/exports';
 import { SAMPLES } from '../engine/samples';
-import { DEFAULT_ASSUMPTIONS, lagSensitivity, round, runAll } from '../engine/scenarios';
+import { assumptionErrors, DEFAULT_ASSUMPTIONS, lagSensitivity, round, runAll } from '../engine/scenarios';
 import type { Assumptions, Resolutions, ScenarioId } from '../engine/types';
 import { parseDataset } from '../engine/validate';
 import { Chart } from './Chart';
@@ -73,6 +73,7 @@ export function App() {
     if (v !== '' && Number.isFinite(n)) setA((p) => ({ ...p, [k]: n }));
   };
   const exportBlocked = exportBlockReason(ds);
+  const badAssumptions = assumptionErrors(a, ds.expectedSps);
   const droppedAssets = ds.issues.filter((i) => i.code === 'asset-dropped');
   const invalidCount = ds.issues.filter((i) => i.severity === 'error').length;
   const memo = () =>
@@ -330,6 +331,11 @@ export function App() {
             <fieldset className="group"><legend>Review rules</legend><div className="group-grid">
               {num('staleHours', 'Stale forecast after', 'h', 1)}
             </div></fieldset>
+            {badAssumptions.length > 0 && (
+              <ul className="err" role="alert" aria-label="Invalid assumptions">
+                {badAssumptions.map((e) => <li key={e}>{e} Every scenario is blocked until this is fixed.</li>)}
+              </ul>
+            )}
             <button type="button" className="btn-ghost" onClick={() => setA(DEFAULT_ASSUMPTIONS)}>Reset assumptions</button>
             <details className="formula">
               <summary>Formulas</summary>
@@ -389,7 +395,7 @@ export function App() {
           {exportBlocked && <p className="err" role="alert">{exportBlocked} Load a valid file to export.</p>}
           <div className="actions">
             <button type="button" className="btn" disabled={!!exportBlocked} onClick={() => download(`decision-memo-${stem}.md`, memo(), 'text/markdown')}>Download decision memo →</button>
-            <button type="button" className="btn-ghost" disabled={!!exportBlocked} onClick={() => download(`scenarios-${stem}.csv`, scenarioCsv(ds, results), 'text/csv')}>Download scenario CSV</button>
+            <button type="button" className="btn-ghost" disabled={!!exportBlocked} onClick={() => download(`scenarios-${stem}.csv`, scenarioCsv(ds, results, { assumptions: a, checks, resolutions: res }), 'text/csv')}>Download scenario CSV</button>
           </div>
           {!exportBlocked && (
             <details className="memo-preview">

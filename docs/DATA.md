@@ -43,12 +43,25 @@ Scenarios:
 | Row missing for an asset or period, blank actual or forecast, or row rejected by validation | Period **blocked**. Scenario **blocked** |
 | Any row rejected by validation (bad value, wrong field count, mixed date), or an asset whose rows are all rejected | Every scenario **blocked** until the file is fixed. The asset is listed, never silently dropped |
 | Unreadable file: binary or non-UTF-8 bytes, unterminated or stray quote, missing columns, empty | Whole file **rejected**. Every scenario **blocked**. Memo and CSV export disabled |
+| Number that is not plain decimal (exponent, more than 9 integer or 9 decimal digits, e.g. a 400-digit value) or above 10,000 MWh per asset per half-hour | Row **rejected** (`bad-number` / `out-of-range`). Every scenario **blocked**. Values never become `Infinity` |
+| Forecast issued at or after its period starts (e.g. issued in 2099) | Row's forecast **rejected** as hindsight (`forecast-after-delivery`). Period and every scenario **blocked** |
+| Assumption outside its range (prices 0-10,000 £/MWh, short premium 0-500%, spill loss 0-100%, spike -50-200%, SP windows 1-N with start ≤ end, lag 0-48 whole SPs, stale threshold 1-720 h) | Every scenario **blocked** and totals withheld. Checked in the engine, not only by the browser's `min`/`max` |
 | Two different rows for the same asset and period | Review: pick one or exclude |
 | Identical duplicate rows | Deduplicated automatically, with an info note |
 | Forecast issued more than the stale threshold before the period starts, or issue time unparseable | Review: accept or exclude (exclude means blocked) |
 | Model version changes within the day for an asset | Review: acknowledge. Error stats are always split by version |
 | Rows for more than one settlement date | Minority-date rows excluded with an error |
 | Outage asset not a generator in the file | Outage scenario blocked |
+
+## Review decisions are bound to what was reviewed
+
+Each review item id carries a fingerprint of exactly what the reviewer saw: `stale:<asset>#<hash of threshold + stale row ids>`, `model:<asset>#<hash of versions + rows>`, `conflict:<asset>:<sp>#<hash of the conflicting row ids>`. If the stale threshold changes (e.g. 30 h → 24 h makes more rows stale) or a resend brings different rows, the old decision no longer matches and the item reopens.
+
+## Provenance and exports
+
+Each source row records its **physical** line number (blank lines and CRLF counted) and its exact raw text, so the trace panel and exports always point to the real line in the uploaded file.
+
+The scenario CSV has one row per scenario × period with `source_row_ids`, plus on every row: `source_file`, `dataset_fingerprint`, `assumptions_fictional` (every assumption as `key=value`) and `review_decisions` (every review id with its decision, or `OPEN`).
 
 ## Seeded examples
 

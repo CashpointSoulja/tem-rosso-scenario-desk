@@ -4,9 +4,23 @@ export class CsvError extends Error {
   }
 }
 
+export interface CsvRecord {
+  cells: string[];
+  /** 1-based physical line where the record starts, counting blank lines. */
+  line: number;
+  /** Exact source text of the record, without its line ending. */
+  raw: string;
+}
+
 /** Strict RFC 4180 parser: malformed quoting throws instead of silently merging rows. */
 export function parseCsv(text: string): string[][] {
-  const out: string[][] = [];
+  return parseCsvRecords(text).map((r) => r.cells);
+}
+
+export function parseCsvRecords(text: string): CsvRecord[] {
+  const out: CsvRecord[] = [];
+  let start = 0;
+  let startLine = 1;
   let row: string[] = [];
   let field = '';
   let quoted = false;
@@ -24,15 +38,18 @@ export function parseCsv(text: string): string[][] {
       quoted = true; wasQuoted = true; quoteLine = line;
     } else if (c === ',') { row.push(field); field = ''; wasQuoted = false; }
     else if (c === '\n' || c === '\r') {
+      const end = i;
       if (c === '\r' && text[i + 1] === '\n') i++;
-      row.push(field); out.push(row); row = []; field = ''; wasQuoted = false; line++;
+      row.push(field); out.push({ cells: row, line: startLine, raw: text.slice(start, end) });
+      row = []; field = ''; wasQuoted = false; line++;
+      start = i + 1; startLine = line;
     } else {
       if (wasQuoted) throw new CsvError(`Line ${line}: text after a closing quote.`, line);
       field += c;
     }
   }
   if (quoted) throw new CsvError(`Line ${quoteLine}: quoted field is never closed.`, quoteLine);
-  if (field !== '' || row.length || wasQuoted) { row.push(field); out.push(row); }
+  if (field !== '' || row.length || wasQuoted) { row.push(field); out.push({ cells: row, line: startLine, raw: text.slice(start) }); }
   return out;
 }
 

@@ -17,12 +17,23 @@ function assertExportable(ds: Dataset) {
   if (why) throw new ExportBlockedError(why);
 }
 
-export function scenarioCsv(ds: Dataset, results: ScenarioResult[]): string {
+export interface CsvContext {
+  assumptions: Assumptions;
+  checks: CheckResult;
+  resolutions: Resolutions;
+}
+
+export function scenarioCsv(ds: Dataset, results: ScenarioResult[], ctx: CsvContext): string {
   assertExportable(ds);
+  const assumptions = Object.entries(ctx.assumptions).map(([k, v]) => `${k}=${v}`).join('; ');
+  const reviews = ctx.checks.review.length
+    ? ctx.checks.review.map((r) => `${r.id}=${ctx.resolutions[r.id] ?? 'OPEN'}`).join('; ')
+    : 'none required';
   const rows: (string | number | null)[][] = [[
     'scenario', 'scenario_status', 'settlement_date', 'sp', 'period_label', 'period_status',
     'demand_actual_mwh', 'generation_actual_mwh', 'demand_forecast_mwh', 'generation_forecast_mwh',
     'imbalance_mwh', 'ref_price_gbp_per_mwh_fictional', 'illustrative_cost_gbp', 'source_row_ids', 'transforms', 'block_or_review_reason',
+    'source_file', 'dataset_fingerprint', 'assumptions_fictional', 'review_decisions',
   ]];
   for (const r of results) {
     for (const p of r.periods) {
@@ -30,6 +41,7 @@ export function scenarioCsv(ds: Dataset, results: ScenarioResult[]): string {
         r.id, r.status, ds.date, p.sp, p.label, p.status,
         p.demandActual, p.genActual, p.demandFcst, p.genFcst,
         p.imbalanceMwh, p.refPrice, p.costGbp, p.sourceRowIds.join(' '), p.transforms.join(' | '), p.reasons.join(' | '),
+        ds.name, ds.fingerprint, assumptions, reviews,
       ]);
     }
   }

@@ -1,5 +1,9 @@
+import { fingerprint } from './csv';
 import { periodStartUtc } from './periods';
 import type { CheckResult, Dataset, ForecastErrorStat, Issue, Resolutions, ReviewItem, Slot, SourceRow } from './types';
+
+/** Review ids carry a signature of exactly what was reviewed, so a decision never carries over to different rows or a different threshold. */
+const sig = (...parts: (string | number)[]) => fingerprint(parts.join('|'));
 
 const same = (a: SourceRow, b: SourceRow) => a.forecastMwh === b.forecastMwh && a.actualMwh === b.actualMwh && a.model === b.model && a.issuedAt === b.issuedAt;
 
@@ -15,18 +19,28 @@ export function runChecks(ds: Dataset, resolutions: Resolutions, staleHours: num
   const date = ds.date;
 
   // Stale forecasts and model-version changes are per asset.
-  const staleByAsset = new Map<string, SourceRow[]>();
+  const staleByAsset = new Map<string, { id: string; rows: SourceRow[] }>();
+  const future = new Set<string>();
+  for (const r of ds.rows) {
+    const issued = Date.parse(r.issuedAt);
+    if (!Number.isNaN(issued) && issued >= periodStartUtc(date, r.sp).getTime()) future.add(r.rowId);
+  }
   for (const a of ds.assets) {
     const rows = ds.rows.filter((r) => r.assetId === a.id);
+    const fut = rows.filter((r) => future.has(r.rowId));
+    if (fut.length)
+      add({ severity: 'error', code: 'forecast-after-delivery', message: `${a.id}: ${fut.length} forecast row(s) issued at or after the period started (e.g. ${fut[0].rowId} issued ${fut[0].issuedAt}). That is hindsight, not a forecast, so those periods are blocked.`, assetId: a.id });
     const stale = rows.filter((r) => {
+      if (future.has(r.rowId)) return false;
       const issued = Date.parse(r.issuedAt);
       if (Number.isNaN(issued)) return true;
       return (periodStartUtc(date, r.sp).getTime() - issued) / 3600_000 > staleHours;
     });
     if (stale.length) {
-      staleByAsset.set(a.id, stale);
+      const id = `stale:${a.id}#${sig(staleHours, ...stale.map((r) => r.rowId))}`;
+      staleByAsset.set(a.id, { id, rows: stale });
       review.push({
-        id: `stale:${a.id}`, kind: 'stale-forecast', assetId: a.id,
+        id, kind: 'stale-forecast', assetId: a.id,
         title: `${a.id}: ${stale.length} forecast row(s) older than ${staleHours} h or with no valid issue time`,
         detail: `Earliest issue time ${stale.map((r) => r.issuedAt || 'blank').sort()[0]}. A stale forecast can make imbalance look worse (or better) than the current model would.`,
         rowIds: stale.map((r) => r.rowId),
@@ -41,7 +55,7 @@ export function runChecks(ds: Dataset, resolutions: Resolutions, staleHours: num
       const firstSp = (m: string) => Math.min(...rows.filter((r) => r.model === m).map((r) => r.sp));
       models.sort((x, y) => firstSp(x) - firstSp(y));
       review.push({
-        id: `model:${a.id}`, kind: 'model-change', assetId: a.id,
+        id: `model:${a.id}#${sig(...models, ...rows.filter((r) => r.model !== models[0]).map((r) => r.rowId))}`, kind: 'model-change', assetId: a.id,
         title: `${a.id}: forecast model changed mid-day (${models.join(' → ')})`,
         detail: `Switch at SP ${firstSp(models[1])}. Error statistics are split by model version and never pooled; a reviewer must acknowledge before results are concluded.`,
         rowIds: rows.filter((r) => r.model !== models[0]).map((r) => r.rowId),
@@ -64,7 +78,7 @@ export function runChecks(ds: Dataset, resolutions: Resolutions, staleHours: num
           if (distinct.length === 1) {
             add({ severity: 'info', code: 'identical-resend', message: `${a.id} SP ${sp}: ${candidates.length} identical rows (${candidates.map((c) => c.rowId).join(', ')}); first one used.`, assetId: a.id, sp });
           } else {
-            const id = `conflict:${a.id}:${sp}`;
+            const id = `conflict:${a.id}:${sp}#${sig(...distinct.map((c) => c.rowId))}`;
             review.push({
               id, kind: 'conflict', assetId: a.id, sp,
               title: `${a.id} SP ${sp}: ${distinct.length} conflicting rows`,
@@ -82,10 +96,11 @@ export function runChecks(ds: Dataset, resolutions: Resolutions, staleHours: num
           }
         }
         if (row) {
-          const staleRows = staleByAsset.get(a.id);
-          const isStale = staleRows?.some((r) => r.rowId === row!.rowId);
-          const staleChoice = resolutions[`stale:${a.id}`];
-          if (row.actualMwh === null) { slot.status = 'gap'; slot.reason = 'actual_mwh is blank (missing reading, not zero)'; }
+          const stale = staleByAsset.get(a.id);
+          const isStale = stale?.rows.some((r) => r.rowId === row!.rowId);
+          const staleChoice = stale ? resolutions[stale.id] : undefined;
+          if (future.has(row.rowId)) { slot.status = 'excluded'; slot.reason = `Forecast issued ${row.issuedAt}, at or after the period started (hindsight, not a forecast)`; }
+          else if (row.actualMwh === null) { slot.status = 'gap'; slot.reason = 'actual_mwh is blank (missing reading, not zero)'; }
           else if (row.forecastMwh === null) { slot.status = 'gap'; slot.reason = 'forecast_mwh is blank'; }
           else if (isStale && staleChoice === 'exclude') { slot.status = 'excluded'; slot.reason = 'Stale forecast excluded by reviewer'; }
           else if (isStale && staleChoice !== 'accept') { slot.status = 'review'; slot.reason = 'Stale forecast awaiting review'; }

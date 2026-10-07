@@ -79,6 +79,15 @@ for (const [name,w,h,m] of [['desk',1366,900,false],['tab',820,1180,false],['mob
   // reset
   await p.getByRole('button', { name: 'Reset', exact: true }).click();
   const after = await p.locator('.sample.active strong').innerText();
+  // invalid assumption blocks every scenario
+  await p.locator('label.field').filter({ has: p.locator('span', { hasText: /^Peak$/ }) }).locator('input').fill('-180');
+  await p.waitForTimeout(100);
+  const negPeak = (await p.locator('.scard .chip').allInnerTexts()).join();
+  const negPeakMsg = await p.locator('[aria-label="Invalid assumptions"]').innerText();
+  await p.evaluate(() => document.querySelector('#s4').scrollIntoView());
+  await p.screenshot({ path:`${dir}/flow-${name}-11-bad-assumption.png` });
+  await p.getByRole('button', { name: 'Reset assumptions' }).click();
+  const restored = (await p.locator('.scard .chip').allInnerTexts()).join();
   const ov = await p.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   const fail = [];
   if (!/^SP 36 /.test(traced)) fail.push('keyboard trace did not move to SP 36');
@@ -88,9 +97,11 @@ for (const [name,w,h,m] of [['desk',1366,900,false],['tab',820,1180,false],['mob
   for (const [f, v] of Object.entries(failClosed)) if (v.statuses !== 'Blocked,Blocked,Blocked') fail.push(`${f} did not block: ${v.statuses}`);
   if (failClosed['bad-asset.csv'].exportDisabled) fail.push('bad-asset.csv should still export its blocked memo');
   for (const f of ['bad-quote.csv', 'bad-bytes.csv']) if (!failClosed[f].exportDisabled) fail.push(`${f} export not disabled`);
+  if (negPeak !== 'Blocked,Blocked,Blocked' || !/Peak price/.test(negPeakMsg)) fail.push('peak price -180 did not block: ' + negPeak);
+  if (restored !== 'Ready,Ready,Ready') fail.push('reset assumptions did not restore Ready: ' + restored);
   if (after !== 'Clean day') fail.push('reset did not restore clean day');
   if (fail.length) { process.exitCode = 1; console.error('FAIL', name, fail.join('; ')); }
-  console.log(fail.length ? 'FAIL' : 'PASS', name, JSON.stringify({ traced, statuses, outageCost, files: [d1.suggestedFilename(), d2.suggestedFilename()], failClosed, after, overflowPx: ov, errs }));
+  console.log(fail.length ? 'FAIL' : 'PASS', name, JSON.stringify({ traced, statuses, outageCost, files: [d1.suggestedFilename(), d2.suggestedFilename()], failClosed, negPeak, restored, after, overflowPx: ov, errs }));
   await c.close();
 }
 await b.close();
