@@ -4,7 +4,7 @@
 
 This is a browser-only scenario desk for one synthetic settlement day on a small two-sided energy portfolio, with two demand assets and two generators. You load half-hourly forecast and actual data, check whether the data can support an answer, compare a **baseline**, a **demand spike** and a **generator outage**, trace any number back to its CSV line, and export a decision memo and scenario CSV.
 
-- Live demo: GitHub Pages for this repository (deployed by `.github/workflows/pages.yml`)
+- Live demo: Cloudflare Workers static assets (free plan). The URL is in the repository "About" link
 - Walkthrough video: [media/walkthrough.mp4](media/walkthrough.mp4) (70 s, voiced, captions in [media/walkthrough.srt](media/walkthrough.srt))
 
 ## The 30-second version
@@ -51,6 +51,10 @@ npm run fixtures    # regenerate the deterministic CSV fixtures
 ```
 
 Requires Node 20+.
+
+## Deploy (Cloudflare, free plan)
+
+The app is a static build with no backend and no secrets. `wrangler.jsonc` serves `dist/` as Workers static assets. Connect the repository in the Cloudflare dashboard (Workers & Pages → Create → Import a repository), with build command `npm run build` and deploy command `npx wrangler deploy`. `.github/workflows/ci.yml` runs the tests and the build on every push.
 
 ## PM package
 

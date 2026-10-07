@@ -1,0 +1,9 @@
+{
+  // Static assets only (Cloudflare Workers free plan). Build: npm run build. Deploy: npx wrangler deploy
+  "name": "tem-rosso-scenario-desk",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
