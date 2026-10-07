@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Visual brand guide: tem Rosso Scenario Desk (independent concept)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=Instrument+Serif&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--o:#FF3F10;--od:#EC2E00;--ink:#222;--ink2:#404040;--mu:#737373;--cr:#F7F4F1;--cr2:#FAF8F7;--pe:#FFF3EA;--st:#9D9287}
+*{box-sizing:border-box}body{margin:0;background:var(--cr);color:var(--ink);font:15px/1.5 "Inter Tight",system-ui,sans-serif;letter-spacing:-.01em}
+.nav{margin:16px;background:#fff;border-radius:999px;padding:12px 16px 12px 24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.nav img{height:24px}.nav small{color:var(--mu)}.nav .cta{margin-left:auto;background:var(--o);color:#fff;border-radius:999px;padding:8px 16px;font-weight:500}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h1{font:400 48px/1 "Instrument Serif",serif;margin:24px 0 8px}h2{font-weight:500;font-size:22px;margin:32px 0 12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.sw{background:#fff;border-radius:16px;overflow:hidden;border:1px solid #eddfd0}.sw div{height:72px}.sw p{margin:0;padding:8px 12px;font:13px "Fragment Mono",monospace}
+.card{background:#fff;border-radius:20px;padding:20px;margin-bottom:12px}
+.mono{font-family:"Fragment Mono",monospace}.serif{font-family:"Instrument Serif",serif}
+.hero{background:var(--o);color:#fff;border-radius:20px;padding:40px;text-align:center}.hero p{font:400 56px/1 "Instrument Serif",serif;margin:0}
+.pill{display:inline-block;border-radius:999px;padding:8px 16px;font-weight:500;margin-right:8px}
+.blocked{border-left:4px solid var(--od)}
+img.ref{width:100%;border-radius:12px;border:1px solid #eddfd0}
+.refs{display:grid;grid-template-columns:2fr 1fr;gap:12px}@media(max-width:700px){.refs{grid-template-columns:1fr}.hero p{font-size:40px}}
+</style></head><body>
+<div class="nav"><img src="tem-logo.svg" alt="tem"><small>Independent concept by Ayo Ahmed. Not affiliated with tem.</small><span class="cta">Run scenarios →</span></div>
+<main>
+<h1>Visual brand guide</h1>
+<p>Taken from the public site <a href="https://tem.energy/">tem.energy</a> on 2026-10-07. The full rationale is in <code>docs/DESIGN.md</code>.</p>
+<h2>Logo (literal official SVG from the site nav)</h2>
+<div class="card" style="display:flex;gap:24px;align-items:center;flex-wrap:wrap"><img src="tem-logo.svg" alt="tem logo" style="height:48px"><span class="mono">viewBox 0 0 91 24 · fill #FF3F10</span></div>
+<h2>Colour</h2>
+<div class="grid">
+<div class="sw"><div style="background:#FF3F10"></div><p>#FF3F10 orange</p></div>
+<div class="sw"><div style="background:#EC2E00"></div><p>#EC2E00 deep</p></div>
+<div class="sw"><div style="background:#222"></div><p>#222222 ink</p></div>
+<div class="sw"><div style="background:#404040"></div><p>#404040 ink-2</p></div>
+<div class="sw"><div style="background:#737373"></div><p>#737373 muted</p></div>
+<div class="sw"><div style="background:#F7F4F1"></div><p>#F7F4F1 cream</p></div>
+<div class="sw"><div style="background:#FFF3EA"></div><p>#FFF3EA peach</p></div>
+<div class="sw"><div style="background:#9D9287"></div><p>#9D9287 stone</p></div>
+</div>
+<h2>Type</h2>
+<div class="card"><p class="serif" style="font-size:44px;margin:0">Scenario desk</p><p class="mono" style="color:var(--mu)">Victor Serif Smooth → Instrument Serif (open fallback)</p>
+<p style="font-weight:500;font-size:24px;margin:16px 0 0">Imbalance under a generator outage</p><p class="mono" style="color:var(--mu)">PP Neue Montreal Medium → Inter Tight 500, −0.01em</p>
+<p class="mono" style="font-size:14px;margin:16px 0 0">SP 37 · 2026-10-05 18:00 · −4.82 MWh · £-1,446</p><p class="mono" style="color:var(--mu)">Fragment Mono (same font as the site)</p></div>
+<h2>Components</h2>
+<div class="card"><span class="pill" style="background:var(--o);color:#fff">Primary →</span><span class="pill" style="color:#C72E00">Text link</span><span class="pill" style="background:var(--pe);color:#8A4100">Needs review</span><span class="pill" style="background:#E6F2EB;color:#1F7A4D">Ready</span></div>
+<div class="card blocked"><strong>Conclusion blocked</strong><br>6 of 48 settlement periods are missing demand readings. Missing is not zero.</div>
+<div class="hero"><img src="tem-logo.svg" alt="" style="height:0"><p>Power, as it should be</p><small>Hero treatment on tem.energy (reference only, not used inside the tool)</small></div>
+<h2>Reference renders (public site)</h2>
+<div class="refs"><img class="ref" src="ref-tem-home-desk.jpg" alt="tem.energy home, desktop"><img class="ref" src="ref-tem-home-mob.jpg" alt="tem.energy home, 390px"></div>
+<div class="refs" style="margin-top:12px"><img class="ref" src="ref-tem-generators-desk-2.jpg" alt="tem.energy generators page showing the RED Insights product screen"><img class="ref" src="ref-tem-home-desk-2.jpg" alt="tem.energy statement band and orange headline"></div>
+</main></body></html>
