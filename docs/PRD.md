@@ -27,7 +27,7 @@ Product decisions on an ML-led energy portfolio get better, and get made faster,
 | # | Requirement | Where |
 |---|---|---|
 | R1 | Load a half-hourly CSV of demand, generation and forecast values, from a seeded example or an upload | Step 1 |
-| R2 | Validate columns, dates, settlement periods (46/48/50 for clock changes), numbers, asset types and duplicate ids. Rejected rows become missing data, never zero | `src/engine/validate.ts` |
+| R2 | Validate columns, dates, settlement periods (46/48/50 for clock changes), numbers, asset types and duplicate ids. Rejected rows become missing data, never zero, and block every scenario. Malformed CSV quoting or unreadable bytes reject the whole file and disable export | `src/engine/validate.ts` |
 | R3 | Report coverage (slots with a reading) separately from forecast error (MAE and bias for each model version) | Step 2 |
 | R4 | Send conflicting resends, stale forecasts and mid-day model-version changes to manual review. Results don't conclude until a person decides | Step 2 |
 | R5 | Baseline, demand spike and generator outage scenarios, using documented formulas and editable fictional assumptions | Steps 3-4 |

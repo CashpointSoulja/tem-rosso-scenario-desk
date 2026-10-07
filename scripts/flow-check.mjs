@@ -1,6 +1,6 @@
 // Interaction check across desktop (1366), tablet (820) and phone (390): seed, trace, blocked, review, assumption change, export, reset.
 // Usage: npm run build && npm run preview, then npm run flow [url]. Screenshots and downloads go to test-results/.
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || undefined, headless: !process.env.CHROME_PATH, args: process.env.CHROME_PATH ? ['--headless=new'] : [] });
 const url = process.argv[2] || 'http://localhost:4173/';
@@ -58,6 +58,24 @@ for (const [name,w,h,m] of [['desk',1366,900,false],['tab',820,1180,false],['mob
   await d1.saveAs(`${dir}/dl-${name}-${d1.suggestedFilename()}`);
   await d2.saveAs(`${dir}/dl-${name}-${d2.suggestedFilename()}`);
   await p.screenshot({ path:`${dir}/flow-${name}-9-export.png` });
+  // fail-closed uploads: malformed asset, unterminated quote, unreadable bytes
+  const clean = readFileSync('public/samples/clean-day.csv', 'utf8');
+  const bad = {
+    'bad-asset.csv': clean.replace(/,G-02,generation,/g, ',G-02,genration,'),
+    'bad-quote.csv': clean.replace('\n', '\n"'),
+    'bad-bytes.csv': Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xff, 0xfe, 0x00, 0x9c]),
+  };
+  const failClosed = {};
+  for (const [fname, body] of Object.entries(bad)) {
+    await p.locator('input[type=file]').setInputFiles({ name: fname, mimeType: 'text/csv', buffer: Buffer.isBuffer(body) ? body : Buffer.from(body) });
+    await p.waitForTimeout(150);
+    failClosed[fname] = {
+      statuses: (await p.locator('.scard .chip').allInnerTexts()).join(),
+      exportDisabled: await p.getByRole('button', { name: /Download decision memo/ }).isDisabled(),
+    };
+  }
+  await p.evaluate(() => document.querySelector('#s1').scrollIntoView());
+  await p.screenshot({ path:`${dir}/flow-${name}-10-unreadable.png` });
   // reset
   await p.getByRole('button', { name: 'Reset', exact: true }).click();
   const after = await p.locator('.sample.active strong').innerText();
@@ -67,9 +85,12 @@ for (const [name,w,h,m] of [['desk',1366,900,false],['tab',820,1180,false],['mob
   if (statuses.join() !== 'Ready,Ready,Ready') fail.push('review decisions did not conclude scenarios: ' + statuses.join());
   if (ov > 0) fail.push('horizontal page overflow ' + ov + 'px');
   if (errs.length) fail.push('page errors: ' + errs.join(' | '));
+  for (const [f, v] of Object.entries(failClosed)) if (v.statuses !== 'Blocked,Blocked,Blocked') fail.push(`${f} did not block: ${v.statuses}`);
+  if (failClosed['bad-asset.csv'].exportDisabled) fail.push('bad-asset.csv should still export its blocked memo');
+  for (const f of ['bad-quote.csv', 'bad-bytes.csv']) if (!failClosed[f].exportDisabled) fail.push(`${f} export not disabled`);
   if (after !== 'Clean day') fail.push('reset did not restore clean day');
   if (fail.length) { process.exitCode = 1; console.error('FAIL', name, fail.join('; ')); }
-  console.log(fail.length ? 'FAIL' : 'PASS', name, JSON.stringify({ traced, statuses, outageCost, files: [d1.suggestedFilename(), d2.suggestedFilename()], after, overflowPx: ov, errs }));
+  console.log(fail.length ? 'FAIL' : 'PASS', name, JSON.stringify({ traced, statuses, outageCost, files: [d1.suggestedFilename(), d2.suggestedFilename()], failClosed, after, overflowPx: ov, errs }));
   await c.close();
 }
 await b.close();

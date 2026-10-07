@@ -1,4 +1,4 @@
-import { fingerprint, parseCsv } from './csv';
+import { CsvError, fingerprint, parseCsv } from './csv';
 import { expectedPeriods, isValidDate } from './periods';
 import type { Asset, AssetType, Dataset, Issue, SourceRow } from './types';
 
@@ -23,14 +23,30 @@ function num(v: string): number | null | 'bad' {
   return Number(s);
 }
 
-export function parseDataset(name: string, text: string): Dataset {
+/** Any of these in a file means the bytes are not readable text (binary, wrong encoding). */
+const UNREADABLE = /[\u0000-\u0008\u000E-\u001F\uFFFD]/;
+
+export function parseDataset(name: string, text: string, readError?: string): Dataset {
   const issues: Issue[] = [];
   let k = 0;
   const add = (i: Omit<Issue, 'id'>) => issues.push({ id: `v${++k}`, ...i });
-  const table = parseCsv(text).filter((r) => !(r.length === 1 && r[0].trim() === ''));
   const base: Dataset = {
     name, text, fingerprint: fingerprint(text), date: null, expectedSps: 48, rows: [], assets: [], issues, fatal: false,
   };
+  const fatal = (code: string, message: string, line?: number) => {
+    add({ severity: 'error', code, message, line });
+    return { ...base, fatal: true };
+  };
+  if (readError) return fatal('unreadable', `The file could not be read: ${readError}`);
+  if (UNREADABLE.test(text)) return fatal('unreadable', 'The file is not readable UTF-8 CSV text (binary or wrong encoding).');
+  let parsed: string[][];
+  try {
+    parsed = parseCsv(text);
+  } catch (e) {
+    if (e instanceof CsvError) return fatal('bad-csv', `Malformed CSV. ${e.message} Nothing in the file is used.`, e.line);
+    throw e;
+  }
+  const table = parsed.filter((r) => !(r.length === 1 && r[0].trim() === ''));
   if (table.length === 0) {
     add({ severity: 'error', code: 'empty-file', message: 'The file is empty.' });
     return { ...base, fatal: true };
@@ -47,14 +63,19 @@ export function parseDataset(name: string, text: string): Dataset {
   const seenIds = new Set<string>();
   const dates = new Map<string, number>();
   const assetTypes = new Map<string, AssetType>();
+  const rejectedAssets = new Set<string>();
   const lines = text.split(/\r?\n/);
 
   table.slice(1).forEach((cells, idx) => {
     const line = idx + 2;
     const get = (c: (typeof REQUIRED_COLUMNS)[number]) => (cells[col[c]] ?? '').trim();
     const rowId = get('row_id');
-    const reject = (code: string, message: string) =>
+    const reject = (code: string, message: string) => {
+      if (get('asset_id')) rejectedAssets.add(get('asset_id'));
       add({ severity: 'error', code, message: `Line ${line}: ${message} Row rejected; its slot counts as missing, not zero.`, line, rowId: rowId || undefined });
+    };
+
+    if (cells.length !== header.length) return reject('bad-field-count', `${cells.length} fields, expected ${header.length}.`);
 
     if (!rowId) return reject('missing-row-id', 'row_id is blank.');
     if (seenIds.has(rowId)) return reject('duplicate-row-id', `row_id ${rowId} already used.`);
@@ -98,6 +119,10 @@ export function parseDataset(name: string, text: string): Dataset {
     .filter(([id]) => kept.some((r) => r.assetId === id))
     .map(([id, type]) => ({ id, type }))
     .sort((x, y) => x.id.localeCompare(y.id));
+  for (const id of [...rejectedAssets].sort()) {
+    if (!assets.some((x) => x.id === id))
+      add({ severity: 'error', code: 'asset-dropped', message: `${id} has no accepted rows. It is still part of the portfolio, so it cannot be silently left out.`, assetId: id });
+  }
   if (!kept.length) add({ severity: 'error', code: 'no-rows', message: 'No usable rows.' });
   return { ...base, date, expectedSps: date ? expectedPeriods(date) : 48, rows: kept, assets, fatal: kept.length === 0 };
 }

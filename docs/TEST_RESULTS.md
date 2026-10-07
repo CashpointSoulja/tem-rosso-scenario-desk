@@ -15,7 +15,7 @@ Run on 2026-10-07 with Node v22.23.3 and TypeScript 5.6.3, on Linux. These are t
  ✓ src/engine/edge-cases.test.ts > edge cases > rejects negative, bad SP, bad asset type and duplicate ids
  ✓ src/engine/edge-cases.test.ts > edge cases > missing columns is fatal and every scenario blocks
  ✓ src/engine/edge-cases.test.ts > edge cases > empty file is fatal
- ✓ src/engine/edge-cases.test.ts > edge cases > mixed settlement dates are flagged and excluded
+ ✓ src/engine/edge-cases.test.ts > edge cases > mixed settlement dates are flagged, excluded and block conclusions
  ✓ src/engine/edge-cases.test.ts > edge cases > unparseable issue time counts as stale and needs review
  ✓ src/engine/edge-cases.test.ts > edge cases > stale threshold is an assumption
  ✓ src/engine/edge-cases.test.ts > edge cases > model version change splits error stats and needs acknowledgement
@@ -23,6 +23,14 @@ Run on 2026-10-07 with Node v22.23.3 and TypeScript 5.6.3, on Linux. These are t
  ✓ src/engine/edge-cases.test.ts > edge cases > spring clock-change day expects 46 periods
  ✓ src/engine/edge-cases.test.ts > edge cases > a 48-period file on a 50-period day blocks the missing periods
  ✓ src/engine/edge-cases.test.ts > edge cases > quoted CSV fields and CRLF line endings parse
+ ✓ src/engine/edge-cases.test.ts > edge cases > an asset whose rows are all malformed is reported, not silently dropped, and blocks every scenario
+ ✓ src/engine/edge-cases.test.ts > edge cases > a single rejected row blocks every scenario even when its slot is otherwise covered
+ ✓ src/engine/edge-cases.test.ts > edge cases > a row with the wrong number of fields is rejected
+ ✓ src/engine/edge-cases.test.ts > edge cases > an unterminated quote is fatal instead of swallowing the rest of the file
+ ✓ src/engine/edge-cases.test.ts > edge cases > stray or trailing quote characters are fatal
+ ✓ src/engine/edge-cases.test.ts > edge cases > binary or wrongly encoded files are unreadable and fatal
+ ✓ src/engine/edge-cases.test.ts > edge cases > exports refuse unreadable or empty inputs instead of writing zero rows
+ ✓ src/engine/edge-cases.test.ts > edge cases > a valid but blocked day still exports, with blocked totals withheld
  ✓ src/engine/engine.test.ts > sample fixtures > clean day concludes all three scenarios
  ✓ src/engine/engine.test.ts > sample fixtures > missing meter batch blocks instead of zero-filling
  ✓ src/engine/engine.test.ts > sample fixtures > resend + model change needs review, then concludes after resolution
@@ -36,27 +44,27 @@ Run on 2026-10-07 with Node v22.23.3 and TypeScript 5.6.3, on Linux. These are t
  ✓ src/engine/engine.test.ts > exports > csv and memo carry provenance and withhold blocked totals
  ✓ src/engine/engine.test.ts > exports > memo for ready data includes trade-offs
  Test Files  2 passed (2)
-      Tests  30 passed (30)
+      Tests  38 passed (38)
 ```
 
-`npm run evals` runs the 18 edge-case tests on their own.
+`npm run evals` runs the 26 edge-case tests on their own.
 
 ## Typecheck and production build: `npm run build`
 
 ```text
 > tsc -b && vite build
-✓ built in 8.07s
+✓ built in 7.79s
 exit=0
 ```
 
 ## Interaction check: `npm run preview` then `npm run flow`
 
-Playwright 1.48.2 on Chromium. The flow covers: load clean day, click a peak bar and press ArrowRight to trace SP 36, switch to Demand spike, load the missing-meter day and trace a hatched bar, load resend + model change and resolve 3 reviews, set detection lag to 1, download memo and CSV, reset.
+Playwright 1.48.2 on Chromium. The flow covers: load clean day, click a peak bar and press ArrowRight to trace SP 36, switch to Demand spike, load the missing-meter day and trace a hatched bar, load resend + model change and resolve 3 reviews, set detection lag to 1, download memo and CSV, upload three invalid files (an asset whose rows all have a misspelt asset_type, an unterminated quote, unreadable bytes) and check that every scenario is Blocked and that export is disabled for the two unreadable files, then reset.
 
 ```text
-PASS desk {"traced":"SP 36 · 17:30 BST\nReady\nDemand spike","statuses":["Ready","Ready","Ready"],"outageCost":"£493","files":["decision-memo-2026-10-07-a0a41402.md","scenarios-2026-10-07-a0a41402.csv"],"after":"Clean day","overflowPx":0,"errs":[]}
-PASS tab {"traced":"SP 36 · 17:30 BST\nReady\nDemand spike","statuses":["Ready","Ready","Ready"],"outageCost":"£493","files":["decision-memo-2026-10-07-a0a41402.md","scenarios-2026-10-07-a0a41402.csv"],"after":"Clean day","overflowPx":0,"errs":[]}
-PASS mob {"traced":"SP 36 · 17:30 BST\nReady\nDemand spike","statuses":["Ready","Ready","Ready"],"outageCost":"£493","files":["decision-memo-2026-10-07-a0a41402.md","scenarios-2026-10-07-a0a41402.csv"],"after":"Clean day","overflowPx":0,"errs":[]}
+PASS desk {"traced":"SP 36 · 17:30 BST\nReady\nDemand spike","statuses":["Ready","Ready","Ready"],"outageCost":"£493","files":["decision-memo-2026-10-07-a0a41402.md","scenarios-2026-10-07-a0a41402.csv"],"failClosed":{"bad-asset.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":false},"bad-quote.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":true},"bad-bytes.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":true}},"after":"Clean day","overflowPx":0,"errs":[]}
+PASS tab {"traced":"SP 36 · 17:30 BST\nReady\nDemand spike","statuses":["Ready","Ready","Ready"],"outageCost":"£493","files":["decision-memo-2026-10-07-a0a41402.md","scenarios-2026-10-07-a0a41402.csv"],"failClosed":{"bad-asset.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":false},"bad-quote.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":true},"bad-bytes.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":true}},"after":"Clean day","overflowPx":0,"errs":[]}
+PASS mob {"traced":"SP 36 · 17:30 BST\nReady\nDemand spike","statuses":["Ready","Ready","Ready"],"outageCost":"£493","files":["decision-memo-2026-10-07-a0a41402.md","scenarios-2026-10-07-a0a41402.csv"],"failClosed":{"bad-asset.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":false},"bad-quote.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":true},"bad-bytes.csv":{"statuses":"Blocked,Blocked,Blocked","exportDisabled":true}},"after":"Clean day","overflowPx":0,"errs":[]}
 ```
 
 `desk` = 1366×768, `tab` = 820×1180, `mob` = 390×844. `overflowPx` is the horizontal page overflow. The chart scrolls inside its own card on narrow screens. The exported memo for the resolved resend day reads "Overall status: READY", and its review section lists all three decisions. The exported CSV has 145 lines: a header plus 3 scenarios × 48 periods.

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { runChecks } from '../engine/checks';
-import { decisionMemo, scenarioCsv } from '../engine/exports';
+import { decisionMemo, exportBlockReason, scenarioCsv } from '../engine/exports';
 import { SAMPLES } from '../engine/samples';
 import { DEFAULT_ASSUMPTIONS, lagSensitivity, round, runAll } from '../engine/scenarios';
 import type { Assumptions, Resolutions, ScenarioId } from '../engine/types';
@@ -19,7 +19,7 @@ function Chip({ s }: { s: keyof typeof STATUS_TEXT }) {
 type NumKey = { [K in keyof Assumptions]: Assumptions[K] extends number ? K : never }[keyof Assumptions];
 
 export function App() {
-  const [source, setSource] = useState({ name: START, text: FIXTURE_TEXT[START] });
+  const [source, setSource] = useState<{ name: string; text: string; readError?: string }>({ name: START, text: FIXTURE_TEXT[START] });
   const [res, setRes] = useState<Resolutions>({});
   const [a, setA] = useState<Assumptions>(DEFAULT_ASSUMPTIONS);
   const [scenario, setScenario] = useState<ScenarioId>('baseline');
@@ -29,7 +29,7 @@ export function App() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const ds = useMemo(() => parseDataset(source.name, source.text), [source]);
+  const ds = useMemo(() => parseDataset(source.name, source.text, source.readError), [source]);
   const checks = useMemo(() => runChecks(ds, res, a.staleHours), [ds, res, a.staleHours]);
   const results = useMemo(() => runAll(ds, checks, a), [ds, checks, a]);
   const lag = useMemo(() => lagSensitivity(ds, checks, a), [ds, checks, a]);
@@ -39,12 +39,12 @@ export function App() {
   const selPeriod = sel !== null ? current.periods.find((p) => p.sp === sel) ?? null : null;
   const rowsById = useMemo(() => new Map(ds.rows.map((r) => [r.rowId, r])), [ds]);
 
-  function load(name: string, text: string) {
-    setSource({ name, text });
+  function load(name: string, text: string, readError?: string) {
+    setSource({ name, text, readError });
     setRes({});
     setSel(null);
-    setUploadError(null);
-    const parsed = parseDataset(name, text);
+    setUploadError(readError ? `Could not read ${name}: ${readError} Nothing from it is used.` : null);
+    const parsed = parseDataset(name, text, readError);
     const gens = parsed.assets.filter((x) => x.type === 'generation');
     setA((prev) => (gens.length && !gens.some((g) => g.id === prev.outageAsset) ? { ...prev, outageAsset: gens[gens.length - 1].id } : prev));
   }
@@ -58,13 +58,23 @@ export function App() {
   }
   async function onFile(f: File | undefined) {
     if (!f) return;
-    if (f.size > 2_000_000) { setUploadError('File is over 2 MB; this prototype reads one settlement day at a time.'); return; }
-    load(f.name, await f.text());
+    if (f.size > 2_000_000) { load(f.name, '', 'file is over 2 MB; this prototype reads one settlement day at a time.'); return; }
+    let text: string;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(await f.arrayBuffer());
+    } catch {
+      load(f.name, '', 'it is not valid UTF-8 text.');
+      return;
+    }
+    load(f.name, text);
   }
   const setNum = (k: NumKey, v: string) => {
     const n = Number(v);
     if (v !== '' && Number.isFinite(n)) setA((p) => ({ ...p, [k]: n }));
   };
+  const exportBlocked = exportBlockReason(ds);
+  const droppedAssets = ds.issues.filter((i) => i.code === 'asset-dropped');
+  const invalidCount = ds.issues.filter((i) => i.severity === 'error').length;
   const memo = () =>
     decisionMemo({ ds, checks, results, assumptions: a, resolutions: res, lag, reviewer, note, generatedAt: new Date().toISOString() });
   const stem = `${ds.date ?? 'unknown'}-${ds.fingerprint}`;
@@ -150,9 +160,16 @@ export function App() {
                     <li key={`${g.assetId}-${g.sp}`}><Chip s="gap" /> <span className="mono">{g.assetId} SP {g.sp}</span> {g.reason}</li>
                   ))}
                 </ul>
-              ) : (
+              ) : null}
+              {ds.fatal ? (
+                <p><Chip s="gap" /> No readable data, so coverage is unknown. Nothing is concluded.</p>
+              ) : droppedAssets.length > 0 ? (
+                <ul className="issue-list" aria-label="Assets with no accepted rows">
+                  {droppedAssets.map((i) => <li key={i.id}><Chip s="gap" /> {i.message}</li>)}
+                </ul>
+              ) : checks.coverage.gaps.length === 0 ? (
                 <p><Chip s="ok" /> No missing readings.</p>
-              )}
+              ) : null}
             </div>
             <div className="panel">
               <h3>Forecast error, by model version</h3>
@@ -353,7 +370,7 @@ export function App() {
               {spikeDelta !== null ? (
                 <li><strong>Peak demand forecasting.</strong> An unforecast +{a.spikePct}% spike over SP {a.spikeStart}-{a.spikeEnd} adds <span className="mono">{gbp(spikeDelta)}</span>.</li>
               ) : <li><strong>Peak demand forecasting.</strong> Not quantified: spike scenario is not concluded.</li>}
-              <li><strong>Data coverage.</strong> {blockedPeriods ? <><span className="mono">{blockedPeriods}</span> of {base.periods.length} periods cannot be valued at all. Until coverage is fixed, every other number on this day is unknowable.</> : 'Complete for this file, so the figures above can be compared.'}</li>
+              <li><strong>Data coverage.</strong> {invalidCount && !blockedPeriods ? <><span className="mono">{invalidCount}</span> validation error(s) in the file. Rejected rows cannot be valued or ignored, so nothing on this day is concluded.</> : blockedPeriods ? <><span className="mono">{blockedPeriods}</span> of {base.periods.length} periods cannot be valued at all. Until coverage is fixed, every other number on this day is unknowable.</> : 'Complete for this file, so the figures above can be compared.'}</li>
             </ol>
           </section>
         </div>
@@ -364,19 +381,22 @@ export function App() {
             <label className="field"><span>Reviewer name (optional)</span><input value={reviewer} onChange={(e) => setReviewer(e.target.value)} maxLength={80} /></label>
             <label className="field wide"><span>Note for the memo (optional)</span><textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} /></label>
           </div>
-          <p className="muted">
+          <p className="muted" hidden={!!exportBlocked}>
             {results.every((r) => r.status === 'ready')
               ? 'All scenarios concluded. The memo includes totals, trade-offs and your review decisions.'
               : 'Some scenarios are not concluded. You can still export: the memo records the blockers and withholds those totals.'}
           </p>
+          {exportBlocked && <p className="err" role="alert">{exportBlocked} Load a valid file to export.</p>}
           <div className="actions">
-            <button type="button" className="btn" onClick={() => download(`decision-memo-${stem}.md`, memo(), 'text/markdown')}>Download decision memo →</button>
-            <button type="button" className="btn-ghost" onClick={() => download(`scenarios-${stem}.csv`, scenarioCsv(ds, results), 'text/csv')}>Download scenario CSV</button>
+            <button type="button" className="btn" disabled={!!exportBlocked} onClick={() => download(`decision-memo-${stem}.md`, memo(), 'text/markdown')}>Download decision memo →</button>
+            <button type="button" className="btn-ghost" disabled={!!exportBlocked} onClick={() => download(`scenarios-${stem}.csv`, scenarioCsv(ds, results), 'text/csv')}>Download scenario CSV</button>
           </div>
-          <details className="memo-preview">
-            <summary>Preview memo</summary>
-            <pre>{memo()}</pre>
-          </details>
+          {!exportBlocked && (
+            <details className="memo-preview">
+              <summary>Preview memo</summary>
+              <pre>{memo()}</pre>
+            </details>
+          )}
         </section>
       </main>
 

@@ -3,7 +3,22 @@ import { round } from './scenarios';
 import type { Assumptions, CheckResult, Dataset, Resolutions, ScenarioResult } from './types';
 import type { LagPoint } from './scenarios';
 
+export class ExportBlockedError extends Error {}
+
+/** Exports need a readable file with accepted rows; otherwise there is nothing to trace or record. */
+export function exportBlockReason(ds: Dataset): string | null {
+  if (ds.fatal) return `Export is blocked: ${ds.issues.find((i) => i.severity === 'error')?.message ?? 'the file could not be read.'}`;
+  if (!ds.date || ds.rows.length === 0) return 'Export is blocked: the file has no accepted rows.';
+  return null;
+}
+
+function assertExportable(ds: Dataset) {
+  const why = exportBlockReason(ds);
+  if (why) throw new ExportBlockedError(why);
+}
+
 export function scenarioCsv(ds: Dataset, results: ScenarioResult[]): string {
+  assertExportable(ds);
   const rows: (string | number | null)[][] = [[
     'scenario', 'scenario_status', 'settlement_date', 'sp', 'period_label', 'period_status',
     'demand_actual_mwh', 'generation_actual_mwh', 'demand_forecast_mwh', 'generation_forecast_mwh',
@@ -38,6 +53,7 @@ export interface MemoInput {
 
 export function decisionMemo(m: MemoInput): string {
   const { ds, checks, results, assumptions: a } = m;
+  assertExportable(ds);
   const L: string[] = [];
   const allReady = results.every((r) => r.status === 'ready');
   L.push('# Scenario decision memo (synthetic)', '');

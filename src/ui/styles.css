@@ -60,6 +60,7 @@ h3 { font-size: 1rem; font-weight: 600; margin: 0 0 4px; display: flex; gap: 8px
 .btn:hover { background: var(--orange-deep); }
 .btn-ghost { background: #fff; border-color: var(--ink); }
 .btn-ghost:hover { background: var(--cream); }
+.btn:disabled, .btn-ghost:disabled { background: var(--line, #F1F0EE); border-color: transparent; color: #737373; }
 .link { background: none; border: 0; padding: 0; color: var(--orange-text); text-decoration: underline; text-underline-offset: 3px; font-size: 0.9rem; }
 
 .chip { display: inline-block; font: 500 0.75rem/1 var(--sans); padding: 5px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid; }

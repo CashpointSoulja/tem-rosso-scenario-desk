@@ -41,6 +41,8 @@ Scenarios:
 | Condition | Result |
 |---|---|
 | Row missing for an asset or period, blank actual or forecast, or row rejected by validation | Period **blocked**. Scenario **blocked** |
+| Any row rejected by validation (bad value, wrong field count, mixed date), or an asset whose rows are all rejected | Every scenario **blocked** until the file is fixed. The asset is listed, never silently dropped |
+| Unreadable file: binary or non-UTF-8 bytes, unterminated or stray quote, missing columns, empty | Whole file **rejected**. Every scenario **blocked**. Memo and CSV export disabled |
 | Two different rows for the same asset and period | Review: pick one or exclude |
 | Identical duplicate rows | Deduplicated automatically, with an info note |
 | Forecast issued more than the stale threshold before the period starts, or issue time unparseable | Review: accept or exclude (exclude means blocked) |

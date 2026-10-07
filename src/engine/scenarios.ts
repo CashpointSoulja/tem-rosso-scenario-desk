@@ -103,13 +103,15 @@ export function runScenario(id: ScenarioId, ds: Dataset, checks: CheckResult, a:
   const blocked = periods.filter((p) => p.status === 'blocked');
   const inReview = periods.filter((p) => p.status === 'review');
   const reasons: string[] = [];
+  const invalid = ds.issues.filter((i) => i.severity === 'error').length;
   if (ds.fatal) reasons.push('Dataset could not be read.');
+  else if (invalid) reasons.push(`${invalid} validation error(s) in the file. Rejected rows cannot be valued or ignored, so no conclusion is drawn until the file is fixed and reloaded.`);
   if (blocked.length) reasons.push(`${blocked.length} of ${periods.length} periods have missing or excluded readings. Missing data is not zero, so no conclusion is drawn.`);
   if (inReview.length) reasons.push(`${inReview.length} period(s) are waiting for manual review.`);
   const otherOpen = checks.openReview.filter((r) => r.kind === 'model-change');
   for (const r of otherOpen) reasons.push(`Open review: ${r.title}.`);
   if (id === 'outage' && !outageKnown) reasons.push(`Outage asset ${a.outageAsset} is not a generator in this file.`);
-  const status = ds.fatal || blocked.length || (id === 'outage' && !outageKnown) ? 'blocked' : inReview.length || otherOpen.length ? 'review' : 'ready';
+  const status = ds.fatal || invalid || blocked.length || (id === 'outage' && !outageKnown) ? 'blocked' : inReview.length || otherOpen.length ? 'review' : 'ready';
   return {
     id, label: SCENARIO_LABELS[id], status, reasons, periods,
     totals: status === 'ready' ? totals(periods) : null,

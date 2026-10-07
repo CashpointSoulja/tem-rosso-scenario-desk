@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { runChecks } from './checks';
 import { DEFAULT_ASSUMPTIONS as A, runAll } from './scenarios';
 import { parseDataset } from './validate';
+import { decisionMemo, exportBlockReason, ExportBlockedError, scenarioCsv } from './exports';
 
 const H = 'row_id,settlement_date,sp,asset_id,asset_type,forecast_mwh,actual_mwh,forecast_model,forecast_issued_at';
 function day(over: (sp: number, asset: string) => string | null = () => null, date = '2026-10-05', n = 48) {
@@ -84,12 +85,12 @@ describe('edge cases', () => {
     expect(parseDataset('e', '').fatal).toBe(true);
   });
 
-  it('mixed settlement dates are flagged and excluded', () => {
+  it('mixed settlement dates are flagged, excluded and block conclusions', () => {
     const text = day() + '\nZ1,2026-10-06,1,D-01,demand,1,1,m1,2026-10-04T12:00:00Z';
     const { ds, r } = run(text);
     expect(ds.issues.some((i) => i.code === 'mixed-dates')).toBe(true);
     expect(ds.rows.every((x) => x.date === '2026-10-05')).toBe(true);
-    expect(r[0].status).toBe('ready');
+    expect(r.every((x) => x.status === 'blocked')).toBe(true);
   });
 
   it('unparseable issue time counts as stale and needs review', () => {
@@ -135,5 +136,60 @@ describe('edge cases', () => {
   it('quoted CSV fields and CRLF line endings parse', () => {
     const text = day().replace(/\n/g, '\r\n').replace('R1,', '"R1",');
     expect(parseDataset('t', text).rows).toHaveLength(96);
+  });
+
+  it('an asset whose rows are all malformed is reported, not silently dropped, and blocks every scenario', () => {
+    const { ds, r } = run(day((sp, a) => (a === 'G-01' ? `B${sp},2026-10-05,${sp},G-01,genration,1,1,m1,2026-10-04T12:00:00Z` : null)));
+    expect(ds.assets.map((x) => x.id)).toEqual(['D-01']);
+    expect(ds.issues.some((i) => i.code === 'asset-dropped' && i.assetId === 'G-01')).toBe(true);
+    expect(r.map((x) => x.status)).toEqual(['blocked', 'blocked', 'blocked']);
+    expect(r.every((x) => x.totals === null)).toBe(true);
+  });
+
+  it('a single rejected row blocks every scenario even when its slot is otherwise covered', () => {
+    const { r } = run(day() + '\nX9,2026-10-05,7,D-01,demand,1,abc,m1,2026-10-04T12:00:00Z');
+    expect(r.every((x) => x.status === 'blocked' && x.totals === null)).toBe(true);
+    expect(r[0].reasons.join(' ')).toMatch(/validation error/);
+  });
+
+  it('a row with the wrong number of fields is rejected', () => {
+    const { ds, r } = run(day((sp, a) => (sp === 4 && a === 'D-01' ? 'R4,2026-10-05,4,D-01,demand,1.000,1.000,m1' : null)));
+    expect(ds.issues.some((i) => i.code === 'bad-field-count')).toBe(true);
+    expect(r[0].status).toBe('blocked');
+  });
+
+  it('an unterminated quote is fatal instead of swallowing the rest of the file', () => {
+    const { ds, r } = run(day().replace('R3,', '"R3,'));
+    expect(ds.fatal).toBe(true);
+    expect(ds.rows).toHaveLength(0);
+    expect(ds.issues[0].code).toBe('bad-csv');
+    expect(ds.issues[0].line).toBe(4);
+    expect(r.every((x) => x.status === 'blocked')).toBe(true);
+  });
+
+  it('stray or trailing quote characters are fatal', () => {
+    expect(parseDataset('t', day().replace('R3,', 'R"3,')).issues[0].code).toBe('bad-csv');
+    expect(parseDataset('t', day().replace('R3,', '"R3"x,')).issues[0].code).toBe('bad-csv');
+  });
+
+  it('binary or wrongly encoded files are unreadable and fatal', () => {
+    expect(parseDataset('b', 'PK\u0003\u0004\u0000\u0000garbage').issues[0].code).toBe('unreadable');
+    expect(parseDataset('b', H + '\nR1,2026-10-05,1,D-\uFFFD1,demand,1,1,m1,x').issues[0].code).toBe('unreadable');
+    expect(parseDataset('b', '', 'it is not valid UTF-8 text.').fatal).toBe(true);
+  });
+
+  it('exports refuse unreadable or empty inputs instead of writing zero rows', () => {
+    for (const text of ['', 'row_id,sp\n1,1', 'PK\u0003\u0004\u0000', day().replace('R3,', '"R3,')]) {
+      const { ds, c, r } = run(text);
+      expect(exportBlockReason(ds)).toMatch(/^Export is blocked/);
+      expect(() => scenarioCsv(ds, r)).toThrow(ExportBlockedError);
+      expect(() => decisionMemo({ ds, checks: c, results: r, assumptions: A, resolutions: {}, lag: [], reviewer: '', note: '', generatedAt: 'x' })).toThrow(ExportBlockedError);
+    }
+  });
+
+  it('a valid but blocked day still exports, with blocked totals withheld', () => {
+    const { ds, r } = run(day((sp, a) => (sp === 9 && a === 'G-01' ? 'skip' : null)));
+    expect(exportBlockReason(ds)).toBeNull();
+    expect(scenarioCsv(ds, r)).toContain('blocked');
   });
 });
