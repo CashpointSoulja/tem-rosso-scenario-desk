@@ -1,7 +1,8 @@
-node_modules/
-dist/
-.vite/
-coverage/
 *.log
 .DS_Store
+.vite/
 /test-results/
+coverage/
+dist/
+node_modules/
+test-results/

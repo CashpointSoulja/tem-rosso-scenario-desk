@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "evals": "vitest run src/engine/edge-cases.test.ts"
+    "evals": "vitest run src/engine/edge-cases.test.ts",
+    "flow": "node scripts/flow-check.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter-tight": "^5.1.0",
@@ -29,6 +30,7 @@
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "~5.6.3",
     "vite": "^5.4.10",
-    "vitest": "^2.1.4"
+    "vitest": "^2.1.4",
+    "playwright": "1.48.2"
   }
 }

@@ -87,7 +87,9 @@ const out = {
 };
 
 mkdirSync('public/samples', { recursive: true });
+mkdirSync('src/fixtures', { recursive: true });
 for (const [name, text] of Object.entries(out)) {
   writeFileSync(`public/samples/${name}`, text);
+  writeFileSync(`src/fixtures/${name}`, text);
   console.log(name, text.split('\n').length - 2, 'rows');
 }
